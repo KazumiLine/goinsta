@@ -3,6 +3,7 @@ package goinsta
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 type accountResp struct {
@@ -73,14 +74,12 @@ type Account struct {
 // Sync updates account information
 func (account *Account) Sync() error {
 	insta := account.inst
-	data, err := insta.prepareData()
-	if err != nil {
-		return err
-	}
 	body, err := insta.sendRequest(&reqOptions{
 		Endpoint: urlCurrentUser,
-		Query:    generateSignature(data),
-		IsPost:   true,
+		Query: map[string]string{
+			"edit": "true",
+		},
+		IsPost: false,
 	})
 	if err == nil {
 		resp := profResp{}
@@ -123,6 +122,37 @@ func (account *Account) ChangePassword(old, new string) error {
 type profResp struct {
 	Status  string  `json:"status"`
 	Account Account `json:"user"`
+}
+
+// UpdateProfilePic updates current profile picture
+//
+// This function updates current Account information.
+//
+// See example: examples/account/updateProfilePic.go
+func (account *Account) UpdateProfilePic(photo io.Reader) error {
+	insta := account.inst
+	config, err := insta.postPhoto(photo, "", 0)
+	if err != nil {
+		return err
+	}
+	data := insta.prepareDataQuery(map[string]interface{}{
+		"use_fbuploader": true,
+		"upload_id":      config["upload_id"].(string),
+	})
+	body, err := insta.sendRequest(&reqOptions{
+		Endpoint: urlUpdateProfPic,
+		Query:    data,
+		IsPost:   true,
+	})
+	if err == nil {
+		resp := profResp{}
+		err = json.Unmarshal(body, &resp)
+		if err == nil {
+			*account = resp.Account
+			account.inst = insta
+		}
+	}
+	return err
 }
 
 // RemoveProfilePic removes current profile picture
@@ -319,14 +349,9 @@ func (account *Account) Saved() (*SavedMedia, error) {
 	return nil, err
 }
 
-type editResp struct {
-	Status  string  `json:"status"`
-	Account Account `json:"user"`
-}
-
 func (account *Account) edit() {
 	insta := account.inst
-	acResp := editResp{}
+	profResp := profResp{}
 	body, err := insta.sendRequest(
 		&reqOptions{
 			Endpoint: urlCurrentUser,
@@ -336,10 +361,10 @@ func (account *Account) edit() {
 		},
 	)
 	if err == nil {
-		err = json.Unmarshal(body, &acResp)
+		err = json.Unmarshal(body, &profResp)
 		if err == nil {
-			acResp.Account.inst = insta
-			*account = acResp.Account
+			profResp.Account.inst = insta
+			*account = profResp.Account
 		}
 	}
 }
